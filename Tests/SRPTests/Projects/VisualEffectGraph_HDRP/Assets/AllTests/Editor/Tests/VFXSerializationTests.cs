@@ -289,7 +289,7 @@ namespace UnityEditor.VFX.Test
                         Assert.AreEqual(4.0f, tArcCircle.circle.radius);
                         Assert.AreEqual(5.0f, tArcCircle.arc);
                     }
-             
+
                     Assert.AreEqual(0.7f, block.inputSlots[1].value);
                     Assert.AreEqual(6.0f, block.inputSlots[2].value);
                 }
@@ -327,7 +327,7 @@ namespace UnityEditor.VFX.Test
                         Assert.AreEqual(6.0f, tArcCone.cone.height);
                         Assert.AreEqual(0.7f, tArcCone.arc);
                     }
-                  
+
                     Assert.AreEqual(0.9f, block.inputSlots[1].value);
                     Assert.AreEqual(1.0f, block.inputSlots[2].value);
                     Assert.AreEqual(8.0f, block.inputSlots[3].value);
@@ -1094,8 +1094,8 @@ namespace UnityEditor.VFX.Test
 
             Action<VisualEffectAsset> write = delegate(VisualEffectAsset asset)
             {
-                var sizeCurrent = VFXLibrary.GetOperators().First(o => o.variant.name.Contains(testAttribute) && o.variant.modelType == typeof(VFXAttributeParameter)).CreateInstance();
-                var sizeSource = VFXLibrary.GetOperators().First(o => o.variant.name.Contains(testAttribute) && o.variant.modelType == typeof(VFXAttributeParameter)).CreateInstance();
+                var sizeCurrent = VFXLibrary.GetOperators().First(o => o.variant.name.Contains(testAttribute, StringComparison.OrdinalIgnoreCase) && o.variant.modelType == typeof(VFXAttributeParameter)).CreateInstance();
+                var sizeSource = VFXLibrary.GetOperators().First(o => o.variant.name.Contains(testAttribute, StringComparison.OrdinalIgnoreCase) && o.variant.modelType == typeof(VFXAttributeParameter)).CreateInstance();
                 (sizeSource as VFXAttributeParameter).SetSettingValue("location", VFXAttributeLocation.Source);
                 asset.GetResource().GetOrCreateGraph().AddChild(sizeCurrent);
                 asset.GetResource().GetOrCreateGraph().AddChild(sizeSource);
@@ -1348,83 +1348,6 @@ namespace UnityEditor.VFX.Test
             File.WriteAllText(s_Modify_SG_Property_SG_B, m_Modify_SG_Property_SG_B);
 
             VFXTestCommon.DeleteAllTemporaryGraph();
-        }
-    }
-
-    //Equivalent of LogAssert but always works during import
-    //LogAssert.Expect(LogType.Error, new Regex("You must use an unlit vfx master node with an unlit output"));
-    //LogAssert.Expect(LogType.Error, new Regex("System.InvalidOperationException"));
-    //It also provides the ability of breaking on log while running test
-    class CustomLogHandler : ILogHandler, IDisposable
-    {
-        private ILogHandler m_OriginalHandler;
-        private Dictionary<string, Type> m_ExpectedException = new();
-        private Dictionary<string, Type> m_ActualException = new();
-        private Dictionary<string, LogType> m_ExpectedLogs = new();
-        private Dictionary<string, LogType> m_ActualLogs = new();
-
-        public CustomLogHandler()
-        {
-            m_OriginalHandler = Debug.unityLogger.logHandler;
-            Debug.unityLogger.logHandler = this;
-        }
-
-        public void Reset()
-        {
-            m_ExpectedException.Clear();
-            m_ActualException.Clear();
-            m_ExpectedLogs.Clear();
-            m_ActualLogs.Clear();
-        }
-
-        public void Clear()
-        {
-            m_ActualException.Clear();
-            m_ActualLogs.Clear();
-        }
-
-        public void ExpectedLog(LogType type, string message)
-        {
-            m_ExpectedLogs.Add(message, type);
-        }
-
-        public void ExpectedException(Type type, string message)
-        {
-            m_ExpectedException.Add(message, type);
-        }
-
-        public void LogFormat(LogType logType, UnityEngine.Object context, string format, params object[] args)
-        {
-            var message = string.Format(format, args);
-
-            if (m_ExpectedLogs.TryGetValue(message, out var type) && type == logType)
-            {
-                m_ActualLogs.TryAdd(message, type);
-            }
-            else
-            {
-                m_OriginalHandler.LogFormat(logType, context, format, args);
-            }
-        }
-
-        public void LogException(Exception exception, UnityEngine.Object context)
-        {
-            if (m_ExpectedException.TryGetValue(exception.Message, out var type) && type == exception.GetType())
-            {
-                m_ActualException.TryAdd(exception.Message, type);
-            }
-            else
-            {
-                m_OriginalHandler.LogException(exception, context);
-            }
-        }
-
-        public void Dispose()
-        {
-            Assert.AreEqual(m_ExpectedLogs.Count, m_ActualLogs.Count, "Expected logs count do not match actual log count");
-            Assert.AreEqual(m_ExpectedException.Count, m_ActualException.Count, "Expected exception count do not match actual exception count");
-            Debug.unityLogger.logHandler = m_OriginalHandler;
-            Reset();
         }
     }
 

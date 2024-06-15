@@ -88,7 +88,7 @@ namespace UnityEditor.Rendering
             // Probe Invalidity section
             public static readonly GUIContent resetDilation = new GUIContent("Reset Dilation Settings");
             public static readonly GUIContent resetVirtualOffset = new GUIContent("Reset Virtual Offset Settings");
-            public static readonly GUIContent renderingLayerMasks = new GUIContent("Rendering Layer Masks", "When enabled, geometry in a Rendering Layer will only receive lighting from probes which see Rendering Layers in the same Rendering Layer Mask. This can be used to prevent leaking across boundaries.\nGeometry not belonging to a Rendering Layer Mask will continue to sample all probes.");
+            public static readonly GUIContent renderingLayerMasks = new GUIContent("Rendering Layer Masks", "When enabled, geometry in a Rendering Layer will only receive lighting from probes which see Rendering Layers in the same Rendering Layer Mask. This can be used to prevent leaking across boundaries.\nGeometry not belonging to a Rendering Layer Mask will continue to sample all probes. Requires Leak Reduction Mode to be enabled.");
             public static readonly string maskTooltip = "The Rendering Layers for this mask.";
         }
 
@@ -268,7 +268,7 @@ namespace UnityEditor.Rendering
 
             EditorGUILayout.Space();
         }
-        
+
         bool RenameEvent(Rect rect, bool active, bool focused, int index, ref int renameIndex)
         {
             if (active)
@@ -398,7 +398,7 @@ namespace UnityEditor.Rendering
                         else if (!supportsLayers && renderPipelineAssetType != null && renderPipelineAssetType.Name == "UniversalRenderPipelineAsset")
                         {
                             string message = "The current URP Asset does not support Light Layers.";
-                    
+
                             CoreEditorUtils.DrawFixMeBox(message, MessageType.Warning, "Open", () =>
                             {
                                 EditorUtility.OpenPropertyEditor(currentPipeline);

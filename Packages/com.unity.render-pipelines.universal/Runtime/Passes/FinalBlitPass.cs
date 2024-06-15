@@ -243,6 +243,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         {
             internal TextureHandle source;
             internal TextureHandle destination;
+            internal TextureHandle depthTexture;
             internal int sourceID;
             internal Vector4 hdrOutputLuminanceParams;
             internal bool requireSrgbConversion;
@@ -264,17 +265,26 @@ namespace UnityEngine.Rendering.Universal.Internal
             passData.blitMaterialData = m_BlitMaterialData[(int)blitType];
         }
 
-        internal void Render(RenderGraph renderGraph, UniversalCameraData cameraData, in TextureHandle src, in TextureHandle dest, TextureHandle overlayUITexture)
+        internal void Render(RenderGraph renderGraph, ContextContainer frameData, UniversalCameraData cameraData, in TextureHandle src, in TextureHandle dest, TextureHandle overlayUITexture)
         {
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Final Blit", out var passData, base.profilingSampler))
             {
+                UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
                 UniversalRenderer renderer = cameraData.renderer as UniversalRenderer;
+
                 if (cameraData.requiresDepthTexture && renderer != null)
                 {
                     if (renderer.renderingModeActual != RenderingMode.Deferred)
+                    {
                         builder.UseGlobalTexture(s_CameraDepthTextureID);
+                        passData.depthTexture = resourceData.activeDepthTexture;
+                    }
+
                     else if (renderer.deferredLights.GbufferDepthIndex != -1)
-                        builder.UseGlobalTexture(DeferredLights.k_GBufferShaderPropertyIDs[renderer.deferredLights.GbufferDepthIndex]);
+                    {
+                        builder.UseTexture(resourceData.gBuffer[renderer.deferredLights.GbufferDepthIndex]);
+                        passData.depthTexture = resourceData.gBuffer[renderer.deferredLights.GbufferDepthIndex];
+                    }
                 }
 
                 bool outputsToHDR = cameraData.isHDROutputActive;
@@ -286,6 +296,12 @@ namespace UnityEngine.Rendering.Universal.Internal
                 builder.UseTexture(src, AccessFlags.Read);
                 passData.destination = dest;
                 builder.SetRenderAttachment(dest, 0, AccessFlags.Write);
+
+#if ENABLE_VR && ENABLE_XR_MODULE
+                // This is a screen-space pass, make sure foveated rendering is disabled for non-uniform renders
+                bool passSupportsFoveation = !XRSystem.foveatedRenderingCaps.HasFlag(FoveatedRenderingCaps.NonUniformRaster);
+                builder.EnableFoveatedRasterization(cameraData.xr.supportsFoveatedRendering && passSupportsFoveation);
+#endif
 
                 if (outputsToHDR && overlayUITexture.IsValid())
                 {
@@ -308,6 +324,9 @@ namespace UnityEngine.Rendering.Universal.Internal
 
                     context.cmd.SetKeyword(ShaderGlobalKeywords.LinearToSRGBConversion, data.requireSrgbConversion);
                     data.blitMaterialData.material.SetTexture(data.sourceID, data.source);
+
+                    if(data.depthTexture.IsValid())
+                        data.blitMaterialData.material.SetTexture(s_CameraDepthTextureID, data.depthTexture);
 
                     DebugHandler debugHandler = GetActiveDebugHandler(data.cameraData);
                     bool resolveToDebugScreen = debugHandler != null && debugHandler.WriteToDebugScreenTexture(data.cameraData.resolveFinalTarget);

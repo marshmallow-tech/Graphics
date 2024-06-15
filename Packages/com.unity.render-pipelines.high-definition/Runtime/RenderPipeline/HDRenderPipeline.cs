@@ -194,7 +194,6 @@ namespace UnityEngine.Rendering.HighDefinition
         ShaderTagId[] m_SinglePassName = new ShaderTagId[1];
         ShaderTagId[] m_MeshDecalsPassNames = { HDShaderPassNames.s_DBufferMeshName };
         ShaderTagId[] m_VfxDecalsPassNames = { HDShaderPassNames.s_DBufferVFXDecalName };
-        ShaderTagId[] m_WaterStencilTagNames = { HDShaderPassNames.s_WaterStencilTagName };
 
         RenderStateBlock m_DepthStateOpaque;
         RenderStateBlock m_DepthStateNoWrite;
@@ -378,6 +377,12 @@ namespace UnityEngine.Rendering.HighDefinition
 
         readonly SkyManager m_SkyManager = new SkyManager();
         internal SkyManager skyManager { get { return m_SkyManager; } }
+
+        readonly VolumetricCloudsSystem m_VolumetricClouds = new VolumetricCloudsSystem();
+        internal VolumetricCloudsSystem volumetricClouds { get { return m_VolumetricClouds; } }
+
+        readonly WaterSystem m_WaterSystem = new WaterSystem();
+        internal WaterSystem waterSystem { get { return m_WaterSystem; } }
 
         bool m_ValidAPI; // False by default mean we render normally, true mean we don't render anything
         bool m_IsDepthBufferCopyValid;
@@ -641,11 +646,11 @@ namespace UnityEngine.Rendering.HighDefinition
             s_ColorResolve8XPassIndex = m_ColorResolveMaterial.FindPass("MSAA8X");
 
             m_SkyManager.Build(asset, this, m_IBLFilterArray);
+            m_VolumetricClouds.Initialize(this);
+            m_WaterSystem.Initialize(this);
 
             InitializeVolumetricLighting();
-            InitializeVolumetricClouds();
             InitializeSubsurfaceScattering();
-            InitializeWaterSystem();
             InitializeLineRendering();
 
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
@@ -964,9 +969,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
             CleanupLightLoop();
 
-            ReleaseVolumetricClouds();
             CleanupSubsurfaceScattering();
-            ReleaseWaterSystem();
             CleanupLineRendering();
 
             // For debugging
@@ -989,6 +992,8 @@ namespace UnityEngine.Rendering.HighDefinition
             CoreUtils.Destroy(m_FinalBlitWithOETFTexArraySingleSlice);
 
             XRSystem.Dispose();
+            m_WaterSystem.Cleanup();
+            m_VolumetricClouds.Cleanup();
             m_SkyManager.Cleanup();
             CleanupVolumetricLighting();
 
@@ -1108,7 +1113,8 @@ namespace UnityEngine.Rendering.HighDefinition
             UpdateShaderVariablesGlobalLightLoop(ref m_ShaderVariablesGlobalCB, hdCamera);
             UpdateShaderVariablesProbeVolumes(ref m_ShaderVariablesGlobalCB, hdCamera, cmd);
             UpdateShaderVariableGlobalAmbientOcclusion(ref m_ShaderVariablesGlobalCB, hdCamera);
-            UpdateShaderVariablesGlobalWater(ref m_ShaderVariablesGlobalCB, hdCamera);
+            m_WaterSystem.UpdateShaderVariablesGlobalWater(ref m_ShaderVariablesGlobalCB, hdCamera);
+            m_VolumetricClouds.UpdateShaderVariablesGlobalVolumetricClouds(ref m_ShaderVariablesGlobalCB, hdCamera);
 
             // Misc
             MicroShadowing microShadowingSettings = hdCamera.volumeStack.GetComponent<MicroShadowing>();
@@ -1161,14 +1167,6 @@ namespace UnityEngine.Rendering.HighDefinition
                 m_ShaderVariablesGlobalCB._SpecularOcclusionBlend = 1.0f;
             }
 
-            // Volumetric Clouds Shadow Data
-            m_ShaderVariablesGlobalCB._VolumetricCloudsShadowScale = m_VolumetricCloudsShadowRegion.regionSize;
-            m_ShaderVariablesGlobalCB._VolumetricCloudsShadowOriginToggle = new Vector4(m_VolumetricCloudsShadowRegion.origin.x, m_VolumetricCloudsShadowRegion.origin.y, m_VolumetricCloudsShadowRegion.origin.z, m_VolumetricCloudsShadowRegion.valid ? 1 : 0);
-            if (ShaderConfig.s_CameraRelativeRendering != 0)
-            {
-                m_ShaderVariablesGlobalCB._VolumetricCloudsShadowOriginToggle -= new Vector4(hdCamera.camera.transform.position.x, hdCamera.camera.transform.position.y, hdCamera.camera.transform.position.z, 0);
-            }
-            m_ShaderVariablesGlobalCB._VolumetricCloudsFallBackValue = m_VolumetricCloudsShadowRegion.fallbackValue;
             m_ShaderVariablesGlobalCB._ColorPyramidUvScaleAndLimitCurrentFrame = HDUtils.ComputeViewportScaleAndLimit(hdCamera.historyRTHandleProperties.currentViewportSize, hdCamera.historyRTHandleProperties.currentViewportSize);
             m_ShaderVariablesGlobalCB._ColorPyramidUvScaleAndLimitPrevFrame = HDUtils.ComputeViewportScaleAndLimit(hdCamera.historyRTHandleProperties.previousViewportSize, hdCamera.historyRTHandleProperties.previousRenderTargetSize);
 
@@ -1423,6 +1421,7 @@ namespace UnityEngine.Rendering.HighDefinition
             public CameraSettings cameraSettings;
             public List<(HDProbe.RenderData, HDProbe)> viewDependentProbesData;
             public bool cullingResultIsShared;
+            public XRPass xrPass;
         }
 
         private void VisitRenderRequestRecursive(List<RenderRequest> requests, List<int> visitStatus, int requestIndex, List<int> renderIndices)
@@ -1475,7 +1474,10 @@ namespace UnityEngine.Rendering.HighDefinition
             }
         }
 
-        bool PrepareAndCullCamera(Camera camera, XRPass xrPass, bool cameraRequestedDynamicRes,
+        bool PrepareAndCullCamera(
+            Camera camera,
+            XRPass xrPass,
+            bool cameraRequestedDynamicRes,
             List<RenderRequest> renderRequests,
             ScriptableRenderContext renderContext,
             out RenderRequest renderRequest,
@@ -1534,7 +1536,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
                 if (needCulling)
                 {
-                    skipRequest = !TryCull(camera, hdCamera, renderContext, m_SkyManager, cullingParameters, m_Asset, ref cullingResults);
+                    skipRequest = !TryCull(camera, hdCamera, renderContext, m_SkyManager, cullingParameters, m_Asset, xrPass, ref cullingResults);
                 }
             }
 
@@ -1552,7 +1554,11 @@ namespace UnityEngine.Rendering.HighDefinition
                 hdCamera.UpdateGlobalMipBiasCB(ref m_ShaderVariablesGlobalCB, GetGlobalMipBias(hdCamera));
                 ConstantBuffer.PushGlobal(m_ShaderVariablesGlobalCB, HDShaderIDs._ShaderVariablesGlobal);
                 // Execute custom render
-                BeginCameraRendering(renderContext, camera);
+                if (xrPass.isFirstCameraPass)
+                {
+                    BeginCameraRendering(renderContext, camera);
+                }
+
                 additionalCameraData.ExecuteCustomRender(renderContext, hdCamera);
             }
 
@@ -1561,7 +1567,10 @@ namespace UnityEngine.Rendering.HighDefinition
                 // Submit render context and free pooled resources for this request
                 renderContext.Submit();
                 m_CullingResultsPool.Release(cullingResults);
-                UnityEngine.Rendering.RenderPipeline.EndCameraRendering(renderContext, camera);
+                if (xrPass.isLastCameraPass)
+                {
+                    EndCameraRendering(renderContext, camera);
+                }
                 return false;
             }
 
@@ -1601,7 +1610,8 @@ namespace UnityEngine.Rendering.HighDefinition
                 index = renderRequests.Count,
                 cameraSettings = CameraSettings.From(hdCamera),
                 viewDependentProbesData = ListPool<(HDProbe.RenderData, HDProbe)>.Get(),
-                cullingResultIsShared = cullingResultIsShared
+                cullingResultIsShared = cullingResultIsShared,
+                xrPass = xrPass
                 // TODO: store DecalCullResult
             };
             renderRequests.Add(renderRequest);
@@ -1819,10 +1829,7 @@ namespace UnityEngine.Rendering.HighDefinition
                     out var hdCamera,
                     out var cullingParameters
                 )
-                      && TryCull(
-                          camera, hdCamera, renderContext, m_SkyManager, cullingParameters, m_Asset,
-                          ref _cullingResults
-                      )
+                      && TryCull(camera, hdCamera, renderContext, m_SkyManager, cullingParameters, m_Asset, XRSystem.emptyPass, ref _cullingResults)
                 ))
                 {
                     // Skip request and free resources
@@ -1906,7 +1913,8 @@ namespace UnityEngine.Rendering.HighDefinition
                     dependsOnRenderRequestIndices = ListPool<int>.Get(),
                     index = renderRequests.Count,
                     cameraSettings = cameraSettings[j],
-                    viewDependentProbesData = ListPool<(HDProbe.RenderData, HDProbe)>.Get()
+                    viewDependentProbesData = ListPool<(HDProbe.RenderData, HDProbe)>.Get(),
+                    xrPass =  XRSystem.emptyPass,
                     // TODO: store DecalCullResult
                 };
 
@@ -2178,7 +2186,7 @@ namespace UnityEngine.Rendering.HighDefinition
             {
                 // Update the water surfaces
                 var commandBuffer = CommandBufferPool.Get("");
-                UpdateWaterSurfaces(commandBuffer);
+                waterSystem.UpdateWaterSurfaces(commandBuffer);
                 renderContext.ExecuteCommandBuffer(commandBuffer);
                 renderContext.Submit();
                 commandBuffer.Clear();
@@ -2387,8 +2395,11 @@ namespace UnityEngine.Rendering.HighDefinition
                                 cmd.SetInvertCulling(false);
                             }
 
-                            //  EndCameraRendering callback should be executed outside of any profiling scope in case user code submits the renderContext
-                            EndCameraRendering(renderContext, renderRequest.hdCamera.camera);
+                            if (renderRequest.xrPass.isLastCameraPass)
+                            {
+                                //  EndCameraRendering callback should be executed outside of any profiling scope in case user code submits the renderContext
+                                EndCameraRendering(renderContext, renderRequest.hdCamera.camera);
+                            }
 
                             EndRenderRequest(renderRequest, cmd);
 
@@ -2508,7 +2519,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 //temporarily disable AOV requests
                 if(hdCam != null)
                 {
-                    existingAOVs = (AOVRequestDataCollection) hdCam.aovRequests;
+                    existingAOVs = (AOVRequestDataCollection)hdCam.aovRequests;
                     hdCam.SetAOVRequests(s_EmptyAOVRequests);
                 }
 
@@ -2588,7 +2599,7 @@ namespace UnityEngine.Rendering.HighDefinition
             }
             else
             {
-                Debug.LogWarning("RenderRequest type: " + typeof(RequestData).FullName  + " is either invalid or unsupported by HDRP");
+                Debug.LogWarning("RenderRequest type: " + typeof(RequestData).FullName+ " is either invalid or unsupported by HDRP");
             }
         }
 
@@ -2686,7 +2697,7 @@ namespace UnityEngine.Rendering.HighDefinition
                     }
                 }
 
-                Func<HDCamera, HDAdditionalLightData, Light,  uint> flagsFunc = delegate (HDCamera hdCamera, HDAdditionalLightData data, Light light)
+                Func<HDCamera, HDAdditionalLightData, Light,uint> flagsFunc = delegate (HDCamera hdCamera, HDAdditionalLightData data, Light light)
                 {
                     uint result = 0u;
 
@@ -2783,7 +2794,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 bool enableBakeShadowMask = PrepareLightsForGPU(renderContext, cmd, hdCamera, cullingResults, hdProbeCullingResults, m_CurrentDebugDisplaySettings, aovRequest);
 
                 // Evaluate the shadow region for the volumetric clouds
-                EvaluateShadowRegionData(hdCamera, cmd);
+                m_VolumetricClouds.EvaluateShadowRegionData(hdCamera, cmd);
 
                 UpdateGlobalConstantBuffers(hdCamera, cmd);
 
@@ -3057,6 +3068,7 @@ namespace UnityEngine.Rendering.HighDefinition
             SkyManager skyManager,
             ScriptableCullingParameters cullingParams,
             HDRenderPipelineAsset hdrp,
+            XRPass xrPass,
             ref HDCullingResults cullingResults
         )
         {
@@ -3094,8 +3106,11 @@ namespace UnityEngine.Rendering.HighDefinition
                 QualitySettings.maximumLODLevel = hdCamera.frameSettings.GetResolvedMaximumLODLevel(hdrp);
 #endif
 
-                // This needs to be called before culling, otherwise in the case where users generate intermediate renderers, it can provoke crashes.
-                BeginCameraRendering(renderContext, camera);
+                if (xrPass.isFirstCameraPass)
+                {
+                    // This needs to be called before culling, otherwise in the case where users generate intermediate renderers, it can provoke crashes.
+                    BeginCameraRendering(renderContext, camera);
+                }
 
                 DecalSystem.CullRequest decalCullRequest = null;
                 if (hdCamera.frameSettings.IsEnabled(FrameSettingsField.Decals))
@@ -3163,7 +3178,7 @@ namespace UnityEngine.Rendering.HighDefinition
             }
         }
 
-        static RendererListDesc CreateOpaqueRendererListDesc(
+        static internal RendererListDesc CreateOpaqueRendererListDesc(
             CullingResults cull,
             Camera camera,
             ShaderTagId passName,
@@ -3307,7 +3322,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 CoreUtils.SetRenderTarget(cmd, backbuffer, ClearFlag.Color, GetColorBufferClearColor(hdCamera));
 
                 // Pass that renders the water surfaces as a wireframe (if water is enabled)
-                RenderWaterAsWireFrame(cmd, hdCamera);
+                m_WaterSystem.RenderWaterAsWireFrame(cmd, hdCamera);
 
                 var rendererListOpaque = renderContext.CreateRendererList(CreateOpaqueRendererListDesc(cull, hdCamera.camera, m_AllForwardOpaquePassNames));
                 DrawOpaqueRendererList(renderContext, cmd, hdCamera.frameSettings, rendererListOpaque);

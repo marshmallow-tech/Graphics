@@ -177,7 +177,7 @@ namespace UnityEditor.Rendering.HighDefinition
         static public readonly GUIContent k_CloudMapTilingText = EditorGUIUtility.TrTextContent("Cloud Map Tiling", "Tiling (x,y) of the cloud map.");
         static public readonly GUIContent k_CloudMapOffsetText = EditorGUIUtility.TrTextContent("Cloud Map Offset", "Offset (x,y) of the cloud map.");
         static public readonly GUIContent k_GlobalHorizontalWindSpeedText = EditorGUIUtility.TrTextContent("Global Horizontal Wind Speed", "Sets the global horizontal wind speed in kilometers per hour.\nThis value can be relative to the Global Wind Speed defined in the Visual Environment.");
-        static public readonly GUIContent k_PerceptualBlending = EditorGUIUtility.TrTextContent("Perceptual Blending", "When enabled, the clouds will blend in a perceptual way with the environment. This may cause artifacts when the sky is over-exposed.");
+        static public readonly GUIContent k_PerceptualBlending = EditorGUIUtility.TrTextContent("Perceptual Blending", "When enabled, the clouds will blend in a perceptual way with the environment. This may cause artifacts when the sky is over-exposed.\nThis only works when MSAA is off.");
 
         void MicroDetailsSection()
         {
@@ -193,6 +193,8 @@ namespace UnityEditor.Rendering.HighDefinition
                 }
             }
         }
+
+        bool IsWrapModeClamp(SerializedDataParameter tex) => tex.value.objectReferenceValue != null && (tex.value.objectReferenceValue as Texture).wrapMode == TextureWrapMode.Clamp;
 
         void AdvancedControlMode()
         {
@@ -215,6 +217,9 @@ namespace UnityEditor.Rendering.HighDefinition
             PropertyField(m_CloudMapResolution);
             PropertyField(m_CloudTiling, k_CloudMapTilingText);
             PropertyField(m_CloudOffset, k_CloudMapOffsetText);
+
+            if (IsWrapModeClamp(m_CumulusMap) || IsWrapModeClamp(m_AltoStratusMap) || IsWrapModeClamp(m_CumulonimbusMap))
+                EditorGUILayout.HelpBox("One of the cloud map textures uses the clamp wrap mode, this wrap mode will be used for the global generated cloud map.", MessageType.Info);
 
             // Properties of the clouds
             PropertyField(m_DensityMultiplier);

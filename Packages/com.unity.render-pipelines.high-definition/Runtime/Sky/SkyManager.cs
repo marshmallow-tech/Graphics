@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using UnityEngine.SceneManagement;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 
@@ -179,8 +180,9 @@ namespace UnityEngine.Rendering.HighDefinition
         public static Dictionary<int, Type> cloudTypesDict { get { if (m_CloudTypesDict == null) UpdateCloudTypes(); return m_CloudTypesDict; } }
 
         // This list will hold the static lighting sky that should be used for baking ambient probe.
-        // In practice we will always use the last one registered but we use a list to be able to roll back to the previous one once the user deletes the superfluous instances.
-        private static List<StaticLightingSky> m_StaticLightingSkies = new List<StaticLightingSky>();
+        // We can have multiple but we only want to use the one from the active scene
+        private static Dictionary<int, StaticLightingSky> m_StaticLightingSkies = new ();
+        private static StaticLightingSky m_ActiveStaticSky;
 
         // Only show the procedural sky upgrade message once
         static bool logOnce = true;
@@ -882,7 +884,7 @@ namespace UnityEngine.Rendering.HighDefinition
             // Render the volumetric clouds into the cubemap
             if (skyContext.volumetricClouds != null)
             {
-                HDRenderPipeline.currentPipeline.RenderVolumetricClouds_Sky(renderGraph, hdCamera, m_FacePixelCoordToViewDirMatrices, skyContext.volumetricClouds,
+                HDRenderPipeline.currentPipeline.volumetricClouds.RenderVolumetricClouds_Sky(renderGraph, hdCamera, m_FacePixelCoordToViewDirMatrices, skyContext.volumetricClouds,
                     skyContext.skyRenderer, (int)m_BuiltinParameters.screenSize.x, (int)m_BuiltinParameters.screenSize.y, cloudsProbeBuffer, outputCubemap);
             }
 
@@ -1185,7 +1187,7 @@ namespace UnityEngine.Rendering.HighDefinition
                     // The static one is "permanent" until recomputed, the dynamic one is recomputed no matter what at the beginning of the frame which guarantees
                     // that it will be ready when we evaluate the clouds for the camera view.
                     HDRenderPipeline hdrp = HDRenderPipeline.currentPipeline;
-                    GraphicsBuffer volumetricCloudsProbe = hdrp.RenderVolumetricCloudsAmbientProbe(renderGraph, hdCamera, skyContext, staticSky);
+                    GraphicsBuffer volumetricCloudsProbe = hdrp.volumetricClouds.RenderVolumetricCloudsAmbientProbe(renderGraph, hdCamera, this, skyContext, staticSky);
 
                     if (forceUpdate)
                     {
@@ -1236,7 +1238,7 @@ namespace UnityEngine.Rendering.HighDefinition
             // because we only maintain one static sky. Since we don't care that the static lighting may be a bit different in the preview we never recompute
             // and we use the one from the main camera.
             bool forceStaticUpdate = false;
-            StaticLightingSky staticLightingSky = GetStaticLightingSky();
+            m_ActiveStaticSky = m_StaticLightingSkies.GetValueOrDefault(SceneManager.GetActiveScene().GetHashCode(), null);
 #if UNITY_EDITOR
             // In the editor, we might need the static sky ready for baking lightmaps/lightprobes regardless of the current ambient mode so we force it to update in this case if it's not been computed yet..
             // We always force an update of the static sky when we're in scene view mode. Previous behaviour was to prevent forced updates if the hash of the static sky was non-null, but this was preventing
@@ -1246,9 +1248,12 @@ namespace UnityEngine.Rendering.HighDefinition
 #endif
             if ((ambientMode == SkyAmbientMode.Static || forceStaticUpdate) && hdCamera.camera.cameraType != CameraType.Preview)
             {
-                m_StaticLightingSky.skySettings = staticLightingSky != null ? staticLightingSky.skySettings : null;
-                m_StaticLightingSky.cloudSettings = staticLightingSky != null ? staticLightingSky.cloudSettings : null;
-                m_StaticLightingSky.volumetricClouds = staticLightingSky != null ? staticLightingSky.volumetricClouds : null;
+                if (m_ActiveStaticSky != null)
+                {
+                    m_StaticLightingSky.skySettings = m_ActiveStaticSky.skySettings;
+                    m_StaticLightingSky.cloudSettings = m_ActiveStaticSky.cloudSettings;
+                    m_StaticLightingSky.volumetricClouds = m_ActiveStaticSky.volumetricClouds;
+                }
                 UpdateEnvironment(renderGraph, hdCamera, m_StaticLightingSky, sunLight, m_StaticSkyUpdateRequired || m_UpdateRequired, true, true, SkyAmbientMode.Static);
                 m_StaticSkyUpdateRequired = false;
             }
@@ -1595,34 +1600,25 @@ namespace UnityEngine.Rendering.HighDefinition
 
         static public StaticLightingSky GetStaticLightingSky()
         {
-            if (m_StaticLightingSkies.Count == 0)
-                return null;
-            else
-                return m_StaticLightingSkies[m_StaticLightingSkies.Count - 1];
+            return m_ActiveStaticSky;
         }
 
         static public void RegisterStaticLightingSky(StaticLightingSky staticLightingSky)
         {
-            if (!m_StaticLightingSkies.Contains(staticLightingSky))
+            #if UNITY_EDITOR
+            if (staticLightingSky.staticLightingSkyUniqueID == (int)SkyType.Procedural && !skyTypesDict.TryGetValue((int)SkyType.Procedural, out var dummy))
             {
-                if (m_StaticLightingSkies.Count != 0)
-                {
-                    Debug.LogWarning("One Static Lighting Sky component was already set for baking, only the latest one will be used.");
-                }
-
-                if (staticLightingSky.staticLightingSkyUniqueID == (int)SkyType.Procedural && !skyTypesDict.TryGetValue((int)SkyType.Procedural, out var dummy))
-                {
-                    Debug.LogError("You are using the deprecated Procedural Sky for static lighting in your Scene. You can still use it but, to do so, you must install it separately. To do this, open the Package Manager window and import the 'Procedural Sky' sample from the HDRP package page, then close and re-open your project without saving.");
-                    return;
-                }
-
-                m_StaticLightingSkies.Add(staticLightingSky);
+                Debug.LogError("You are using the deprecated Procedural Sky for static lighting in your Scene. You can still use it but, to do so, you must install it separately. To do this, open the Package Manager window and import the 'Procedural Sky' sample from the HDRP package page, then close and re-open your project without saving.");
+                return;
             }
+            #endif
+
+            m_StaticLightingSkies[staticLightingSky.gameObject.scene.GetHashCode()] = staticLightingSky;
         }
 
         static public void UnRegisterStaticLightingSky(StaticLightingSky staticLightingSky)
         {
-            m_StaticLightingSkies.Remove(staticLightingSky);
+            m_StaticLightingSkies.Remove(staticLightingSky.gameObject.scene.GetHashCode());
         }
 
         public Texture2D ExportSkyToTexture(Camera camera)

@@ -372,6 +372,9 @@ EditorBuildSettings:
     path: Assets/Scenes/206_Motion_Vectors.unity
     guid: aa08e99a89c77574e9a00b9888fc75ce
   - enabled: 1
+    path: Assets/Scenes/206_Motion_Vectors_Deferred.unity
+    guid: 8198a3e8648b30444a8e27d429ac431d
+  - enabled: 1
     path: Assets/Scenes/207_Motion_Vectors_Direction_Objects_Only.unity
     guid: 273840277f52540639fbb7d0903d4c7b
   - enabled: 1
@@ -383,6 +386,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/209_Motion_Vectors_Camera_And_Objects.unity
     guid: d84ff56928dab4734b69906d7e13638d
+  - enabled: 1
+    path: Assets/Scenes/209_Motion_Vectors_Camera_And_Objects_Deferred.unity
+    guid: c56f386d77545894e84cd442f2a0ce08
   - enabled: 1
     path: Assets/Scenes/210_Motion_Vectors_All_Shader_Types.unity
     guid: aca920b1cf9c39c4cb9a4ccfe056b6cb
@@ -494,6 +500,18 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/300_RandomUAV.unity
     guid: 5e57a94eeee3964488362ad6cab7cfb2
+  - enabled: 1
+    path: Assets/Scenes/301_useViewFrustumForShadowCasterCull_false.unity
+    guid: c721071fe72436c4aa76a3f438915b6d
+  - enabled: 1
+    path: Assets/Scenes/301_useViewFrustumForShadowCasterCull_true.unity
+    guid: 24f9bd7e4ee841d41a5cf4538052774c
+  - enabled: 1
+    path: Assets/Scenes/301_useViewFrustumForShadowCasterCull_noCascades_false.unity
+    guid: afbffcf7f306ba14d8324a9c21880d38
+  - enabled: 1
+    path: Assets/Scenes/301_useViewFrustumForShadowCasterCull_noCascades_true.unity
+    guid: 162856843a0b75c47a760c58d9d38e1b
   - enabled: 1
     path: Assets/Scenes/310_Swapbuffer_Depth.unity
     guid: aec68106d2ff047868f32b8853c6abf0

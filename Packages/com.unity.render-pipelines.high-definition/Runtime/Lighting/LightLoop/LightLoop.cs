@@ -589,6 +589,7 @@ namespace UnityEngine.Rendering.HighDefinition
         /// </summary>
         /// <returns>The main directional Light.</returns>
         public Light GetMainLight() { return m_CurrentSunLight; }
+        internal HDAdditionalLightData GetMainLightAdditionalData() { return m_CurrentSunLightAdditionalLightData; }
 
         // Screen space shadow data
         internal struct ScreenSpaceShadowData
@@ -1389,11 +1390,10 @@ namespace UnityEngine.Rendering.HighDefinition
 
                     if (hdCamera.visualSky.skyRenderer?.GetType() == typeof(PhysicallyBasedSkyRenderer))
                     {
-                        // Lights with 0 intensity are culled by unity, but we still want to show them
-                        // in the PBR sky, so we need to allocate space for the cookie
+                        // Allocate space in the cookie atlas for PBR sky surface textures
                         foreach (var directional in lightEntities.directionalLights)
                         {
-                            if (directional.legacyLight.intensity == 0.0f && directional.interactsWithSky)
+                            if (directional.interactsWithSky)
                                 m_TextureCaches.lightCookieManager.ReserveSpace(directional.surfaceTexture);
                         }
                     }
@@ -1773,8 +1773,6 @@ namespace UnityEngine.Rendering.HighDefinition
             {
                 case LightType.Directional:
                 {
-                    if (hdLightData.interactsWithSky)
-                        m_TextureCaches.lightCookieManager.ReserveSpace(hdLightData.surfaceTexture);
                     m_TextureCaches.lightCookieManager.ReserveSpace(light?.cookie);
                     break;
                 }

@@ -80,25 +80,6 @@ namespace UnityEditor.Rendering
             readonly static ExpandedState<Expandable, ProbeAdjustmentVolume> k_ExpandedState = new ExpandedState<Expandable, ProbeAdjustmentVolume>(Expandable.Volume | Expandable.Adjustments);
             readonly static AdditionalPropertiesState<AdditionalProperties, ProbeAdjustmentVolume> k_AdditionalPropertiesState = new AdditionalPropertiesState<AdditionalProperties, ProbeAdjustmentVolume>(0);
 
-            public static void RegisterEditor(ProbeAdjustmentVolumeEditor editor)
-            {
-                k_AdditionalPropertiesState.RegisterEditor(editor);
-            }
-
-            public static void UnregisterEditor(ProbeAdjustmentVolumeEditor editor)
-            {
-                k_AdditionalPropertiesState.UnregisterEditor(editor);
-            }
-
-            [SetAdditionalPropertiesVisibility]
-            public static void SetAdditionalPropertiesVisibility(bool value)
-            {
-                if (value)
-                    k_AdditionalPropertiesState.ShowAll();
-                else
-                    k_AdditionalPropertiesState.HideAll();
-            }
-
             public static void DrawVolumeContent(SerializedProbeAdjustmentVolume serialized, Editor owner)
             {
                 EditorGUILayout.PropertyField(serialized.shape);
@@ -293,10 +274,11 @@ namespace UnityEditor.Rendering
                 if (owner.targets.Length == 1)
                 {
                     EditorGUILayout.Space();
-                    using (new EditorGUI.DisabledScope(bakingSet == null))
+                    using (new EditorGUI.DisabledScope(Lightmapping.isRunning || bakingSet == null))
                     {
-                        if (GUILayout.Button(Styles.s_PreviewLighting))
-                            AdaptiveProbeVolumes.BakeAdjustmentVolume(bakingSet, ptv);
+                        using (new EditorGUI.DisabledScope(AdaptiveProbeVolumes.isRunning))
+                            if (GUILayout.Button(Styles.s_PreviewLighting))
+                                AdaptiveProbeVolumes.BakeAdjustmentVolume(bakingSet, ptv);
 
                         ProbeVolumeLightingTab.BakeAPVButton();
                     }
