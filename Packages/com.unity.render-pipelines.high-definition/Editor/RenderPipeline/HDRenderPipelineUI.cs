@@ -763,6 +763,17 @@ namespace UnityEditor.Rendering.HighDefinition
                     ++EditorGUI.indentLevel;
                 }
 #endif
+                bool containsSTP = ((1 << (int)AdvancedUpscalers.STP) & advancedUpscalersEnabledMask) != 0;
+                if (containsSTP)
+                {
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        // Draw STP settings
+                        int value = EditorGUILayout.IntPopup(Styles.STPInjectionPoint, serialized.renderPipelineSettings.dynamicResolutionSettings.STPInjectionPoint.intValue, Styles.UpscalerInjectionPointNames, Styles.UpscalerInjectionPointValues);
+                        serialized.renderPipelineSettings.dynamicResolutionSettings.STPInjectionPoint.intValue = value;
+                    }
+                }
+
                 EditorGUILayout.PropertyField(serialized.renderPipelineSettings.dynamicResolutionSettings.dynamicResType, Styles.dynResType);
                 bool isHwDrs = (serialized.renderPipelineSettings.dynamicResolutionSettings.dynamicResType.intValue == (int)DynamicResolutionType.Hardware);
                 bool gfxDeviceSupportsHwDrs = HDUtils.IsHardwareDynamicResolutionSupportedByDevice(SystemInfo.graphicsDeviceType);
@@ -800,6 +811,22 @@ namespace UnityEditor.Rendering.HighDefinition
                     }
                 }
 
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    if (currentUpscaleFilter == DynamicResUpscaleFilter.TAAU)
+                    {
+                        int ip = EditorGUILayout.IntPopup(Styles.TAAUInjectionPoint, serialized.renderPipelineSettings.dynamicResolutionSettings.TAAUInjectionPoint.intValue, Styles.UpscalerInjectionPointNames, Styles.UpscalerInjectionPointValues);
+                        serialized.renderPipelineSettings.dynamicResolutionSettings.TAAUInjectionPoint.intValue = ip;
+                    }
+                    // Catmull-Rom is combined to the final pass, so we can't change it's injection point
+                    // FSR 1.0 (EdgeAdaptiveScalingUpres) only works with perceptual data, so we can't change it's injection point.
+                    else if (currentUpscaleFilter != DynamicResUpscaleFilter.CatmullRom && currentUpscaleFilter != DynamicResUpscaleFilter.EdgeAdaptiveScalingUpres)
+                    {
+                        int ip = EditorGUILayout.IntPopup(Styles.defaultInjectionPoint, serialized.renderPipelineSettings.dynamicResolutionSettings.defaultInjectionPoint.intValue, Styles.UpscalerInjectionPointNames, Styles.UpscalerInjectionPointValues);
+                        serialized.renderPipelineSettings.dynamicResolutionSettings.defaultInjectionPoint.intValue = ip;
+                    }
+                }
+
                 EditorGUILayout.PropertyField(serialized.renderPipelineSettings.dynamicResolutionSettings.useMipBias, Styles.useMipBias);
 
                 EditorGUILayout.PropertyField(serialized.renderPipelineSettings.dynamicResolutionSettings.forcePercentage, Styles.forceScreenPercentage);
@@ -834,10 +861,12 @@ namespace UnityEditor.Rendering.HighDefinition
 #endif
 
                         // Show a warning if STP is selected with software DRS and a dynamic scaling range
-                        bool containsSTP = ((1 << (int)AdvancedUpscalers.STP) & advancedUpscalersEnabledMask) != 0;
-                        if (containsSTP && (!isHwDrs || !gfxDeviceSupportsHwDrs))
+                        if (containsSTP)
                         {
-                            EditorGUILayout.HelpBox($"{Styles.STPSwDrsWarningMsg}", MessageType.Warning, wide: true);
+                            if (!isHwDrs || !gfxDeviceSupportsHwDrs)
+                            {
+                                EditorGUILayout.HelpBox($"{Styles.STPSwDrsWarningMsg}", MessageType.Warning, wide: true);
+                            }
                         }
 
                         float minPercentage = serialized.renderPipelineSettings.dynamicResolutionSettings.minPercentage.floatValue;
@@ -946,28 +975,18 @@ namespace UnityEditor.Rendering.HighDefinition
             {
                 EditorGUILayout.PropertyField(serialized.renderPipelineSettings.waterSimulationResolution, Styles.waterSimulationResolutionContent);
 
-                // Deformation
-                EditorGUILayout.PropertyField(serialized.renderPipelineSettings.supportWaterDeformation, Styles.supportWaterDeformationContent);
-                ++EditorGUI.indentLevel;
-                using (new EditorGUI.DisabledScope(!serialized.renderPipelineSettings.supportWaterDeformation.boolValue))
+                // Decals
+                EditorGUILayout.PropertyField(serialized.renderPipelineSettings.supportWaterDecals);
+                using (new EditorGUI.DisabledScope(!serialized.renderPipelineSettings.supportWaterDecals.boolValue))
+                using (new EditorGUI.IndentLevelScope())
                 {
-                    EditorGUILayout.PropertyField(serialized.renderPipelineSettings.deformationAtlasSize, Styles.deformationAtlasSizeContent);
+                    EditorGUILayout.PropertyField(serialized.renderPipelineSettings.waterDecalAtlasSize, Styles.waterDecalAtlasSizeContent);
 
                     EditorGUI.BeginChangeCheck();
-                    EditorGUILayout.DelayedIntField(serialized.renderPipelineSettings.maximumDeformerCount, Styles.maximumDeformerCountContent);
+                    EditorGUILayout.DelayedIntField(serialized.renderPipelineSettings.maximumWaterDecalCount, Styles.maximumWaterDecalCountContent);
                     if (EditorGUI.EndChangeCheck())
-                        serialized.renderPipelineSettings.maximumDeformerCount.intValue = Mathf.Clamp(serialized.renderPipelineSettings.maximumDeformerCount.intValue, 1, 256);
+                        serialized.renderPipelineSettings.maximumWaterDecalCount.intValue = Mathf.Clamp(serialized.renderPipelineSettings.maximumWaterDecalCount.intValue, 1, 256);
                 }
-                --EditorGUI.indentLevel;
-
-                // Foam
-                EditorGUILayout.PropertyField(serialized.renderPipelineSettings.supportWaterFoam, Styles.supportWaterFoamContent);
-                ++EditorGUI.indentLevel;
-                using (new EditorGUI.DisabledScope(!serialized.renderPipelineSettings.supportWaterFoam.boolValue))
-                {
-                    EditorGUILayout.PropertyField(serialized.renderPipelineSettings.foamAtlasSize, Styles.foamAtlasSizeContent);
-                }
-                --EditorGUI.indentLevel;
 
                 // Exclusion
                 EditorGUILayout.PropertyField(serialized.renderPipelineSettings.supportWaterExclusion, Styles.supportWaterExclusionContent);

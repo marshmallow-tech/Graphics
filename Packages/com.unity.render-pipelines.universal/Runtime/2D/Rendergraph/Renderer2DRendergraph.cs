@@ -136,12 +136,13 @@ namespace UnityEngine.Rendering.Universal
                 int numSamples = Mathf.Max(Screen.msaaSamples, 1);
 
                 // Handle edge cases regarding numSamples setup
-                // On OSX player, the Screen API MSAA samples change request is only applied in the following frame,
+                // On OSX & IOS player, the Screen API MSAA samples change request is only applied in the following frame,
                 // as a workaround we keep the old MSAA sample count for the previous frame
                 // this workaround can be removed once the Screen API issue (UUM-42825) is fixed
+                // UPDATE: UUM-42825 is fixed already, but by supplementing relevant document. Thus, this behaviour must be maintained until next plan comes
                 // The editor always allocates the system rendertarget with a single msaa sample
                 // See: ConfigureTargetTexture in PlayModeView.cs
-                if (msaaSamplesChangedThisFrame && Application.platform == RuntimePlatform.OSXPlayer)
+                if (msaaSamplesChangedThisFrame && (Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.IPhonePlayer))
                     numSamples = cameraData.cameraTargetDescriptor.msaaSamples;
                 else if (Application.isEditor)
                     numSamples = 1;
@@ -333,8 +334,22 @@ namespace UnityEngine.Rendering.Universal
                     var depthDescriptor = cameraData.cameraTargetDescriptor;
                     depthDescriptor.useMipMap = false;
                     depthDescriptor.autoGenerateMips = false;
-                    if (!lastCameraInTheStack && m_UseDepthStencilBuffer)
-                        depthDescriptor.bindMS = depthDescriptor.msaaSamples > 1 && !SystemInfo.supportsMultisampleAutoResolve && (SystemInfo.supportsMultisampledTextures != 0);
+                    depthDescriptor.bindMS = false;
+
+                    bool hasMSAA = depthDescriptor.msaaSamples > 1 && (SystemInfo.supportsMultisampledTextures != 0);
+                    bool resolveDepth = RenderingUtils.MultisampleDepthResolveSupported() && renderGraph.nativeRenderPassesEnabled;
+
+                    if (m_CopyDepthPass != null)
+                        m_CopyDepthPass.m_CopyResolvedDepth = resolveDepth;
+
+                    if (hasMSAA)
+                    {
+                        depthDescriptor.bindMS = !resolveDepth;
+                    }
+
+                    // binding MS surfaces is not supported by the GLES backend, and it won't be fixed after investigating
+                    if (IsGLDevice())
+                        depthDescriptor.bindMS = false;
 
                     depthDescriptor.graphicsFormat = GraphicsFormat.None;
                     depthDescriptor.depthStencilFormat = k_DepthStencilFormat;
@@ -396,6 +411,31 @@ namespace UnityEngine.Rendering.Universal
 
             var postProcessDesc = PostProcessPass.GetCompatibleDescriptor(cameraTargetDescriptor, cameraTargetDescriptor.width, cameraTargetDescriptor.height, cameraTargetDescriptor.graphicsFormat, DepthBits.None);
             commonResourceData.afterPostProcessColor = UniversalRenderer.CreateRenderGraphTexture(renderGraph, postProcessDesc, "_AfterPostProcessTexture", true);
+
+            if (RequiresDepthCopyPass(cameraData))
+                CreateCameraDepthCopyTexture(renderGraph, cameraTargetDescriptor);
+        }
+
+        bool RequiresDepthCopyPass(UniversalCameraData cameraData)
+        {
+            var renderPassInputs = GetRenderPassInputs(cameraData);
+            bool cameraHasPostProcessingWithDepth = cameraData.postProcessEnabled && m_PostProcessPasses.isCreated && cameraData.postProcessingRequiresDepthTexture;
+            bool requiresDepthCopyPass = (cameraHasPostProcessingWithDepth || renderPassInputs.requiresDepthTexture) && m_CreateDepthTexture;
+
+            return requiresDepthCopyPass;
+        }
+
+        void CreateCameraDepthCopyTexture(RenderGraph renderGraph, RenderTextureDescriptor descriptor)
+        {
+            CommonResourceData resourceData = frameData.Get<CommonResourceData>();
+
+            var depthDescriptor = descriptor;
+            depthDescriptor.msaaSamples = 1;// Depth-Only pass don't use MSAA
+            depthDescriptor.graphicsFormat = GraphicsFormat.R32_SFloat;
+            depthDescriptor.depthStencilFormat = GraphicsFormat.None;
+            depthDescriptor.depthBufferBits = 0;
+
+            resourceData.cameraDepthTexture = UniversalRenderer.CreateRenderGraphTexture(renderGraph, depthDescriptor, "_CameraDepthTexture", true);
         }
 
         public override void OnBeginRenderGraphFrame()
@@ -447,6 +487,11 @@ namespace UnityEngine.Rendering.Universal
             CommonResourceData commonResourceData = frameData.Get<CommonResourceData>();
             universal2DResourceData.EndFrame();
             commonResourceData.EndFrame();
+        }
+
+        internal override void OnFinishRenderGraphRendering(CommandBuffer cmd)
+        {
+            m_CopyDepthPass?.OnCameraCleanup(cmd);
         }
 
         private void OnBeforeRendering(RenderGraph renderGraph)
@@ -538,6 +583,9 @@ namespace UnityEngine.Rendering.Universal
                     }
                 }
             }
+
+            if (RequiresDepthCopyPass(cameraData))
+                m_CopyDepthPass?.Render(renderGraph, frameData, commonResourceData.cameraDepthTexture, commonResourceData.activeDepthTexture, true);
 
             bool shouldRenderUI = cameraData.rendersOverlayUI;
             bool outputToHDR = cameraData.isHDROutputActive;

@@ -65,7 +65,7 @@ namespace UnityEditor.Rendering.HighDefinition
             m_Anisotropy = Unpack(o.Find(x => x.anisotropy));
             m_MultipleScatteringIntensity = Unpack(o.Find(x => x.multipleScatteringIntensity));
             m_GlobalLightProbeDimmer = Unpack(o.Find(x => x.globalLightProbeDimmer));
-            
+
             m_EnableVolumetricFog = Unpack(o.Find(x => x.enableVolumetricFog));
             m_DepthExtent = Unpack(o.Find(x => x.depthExtent));
             m_SliceDistributionUniformity = Unpack(o.Find(x => x.sliceDistributionUniformity));
@@ -82,6 +82,8 @@ namespace UnityEditor.Rendering.HighDefinition
 
         public override void OnInspectorGUI()
         {
+            HDEditorUtils.EnsureFrameSetting(FrameSettingsField.AtmosphericScattering, "Fog");
+
             PropertyField(m_Enabled, s_Enabled);
 
             PropertyField(m_MeanFreePath, s_MeanFreePathLabel);
@@ -121,6 +123,8 @@ namespace UnityEditor.Rendering.HighDefinition
             if (volumetricLightingAvailable)
             {
                 PropertyField(m_EnableVolumetricFog, s_EnableVolumetricFog);
+
+                HDEditorUtils.EnsureFrameSetting(FrameSettingsField.Volumetrics, "Volumetric Fog");
 
                 using (new IndentLevelScope())
                 {
@@ -169,9 +173,9 @@ namespace UnityEditor.Rendering.HighDefinition
                         EndAdditionalPropertiesScope();
                     }
 
-                    PropertyField(m_MultipleScatteringIntensity);
                 }
             }
+            PropertyField(m_MultipleScatteringIntensity);
         }
 
         public override QualitySettingsBlob SaveCustomQualitySettingsAsObject(QualitySettingsBlob settings = null)

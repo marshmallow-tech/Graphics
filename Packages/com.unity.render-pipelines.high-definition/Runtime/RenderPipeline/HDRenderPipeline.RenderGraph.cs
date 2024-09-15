@@ -182,13 +182,21 @@ namespace UnityEngine.Rendering.HighDefinition
                     if (!hdCamera.frameSettings.IsEnabled(FrameSettingsField.Water))
                         volumetricDensityBuffer = ClearAndHeightFogVoxelizationPass(m_RenderGraph, hdCamera, prepassOutput.depthBuffer, transparentPrepass);
 
+                    // Render Reflections. Due to incorrect resource barriers on some platforms, we have to run SSR before shadow maps to have correct async compute
+                    // However, raytraced reflections don't run async have to be executed after shadows maps to get correct shadowing, so the call is duplicated here
+                    // Evaluate the clear coat mask texture based on the lit shader mode
+                    var clearCoatMask = hdCamera.frameSettings.litShaderMode == LitShaderMode.Deferred ? prepassOutput.gbuffer.mrt[2] : m_RenderGraph.defaultResources.blackTextureXR;
+                    var settings = hdCamera.volumeStack.GetComponent<ScreenSpaceReflection>();
+                    bool rtReflections = EnableRayTracedReflections(hdCamera, settings);
+                    if (!rtReflections)
+                        lightingBuffers.ssrLightingBuffer = RenderSSR(m_RenderGraph, hdCamera, ref prepassOutput, clearCoatMask, rayCountTexture, historyValidationTexture, m_SkyManager.GetSkyReflection(hdCamera), transparent: false);
+
                     RenderShadows(m_RenderGraph, hdCamera, cullingResults, ref shadowResult);
 
                     StartXRSinglePass(m_RenderGraph, hdCamera);
 
-                    // Evaluate the clear coat mask texture based on the lit shader mode
-                    var clearCoatMask = hdCamera.frameSettings.litShaderMode == LitShaderMode.Deferred ? prepassOutput.gbuffer.mrt[2] : m_RenderGraph.defaultResources.blackTextureXR;
-                    lightingBuffers.ssrLightingBuffer = RenderSSR(m_RenderGraph, hdCamera, ref prepassOutput, default, clearCoatMask, rayCountTexture, historyValidationTexture, m_SkyManager.GetSkyReflection(hdCamera), transparent: false);
+                    if (rtReflections)
+                        lightingBuffers.ssrLightingBuffer = RenderSSR(m_RenderGraph, hdCamera, ref prepassOutput, clearCoatMask, rayCountTexture, historyValidationTexture, m_SkyManager.GetSkyReflection(hdCamera), transparent: false);
                     lightingBuffers.ssgiLightingBuffer = RenderScreenSpaceIndirectDiffuse(hdCamera, prepassOutput, rayCountTexture, historyValidationTexture, gpuLightListOutput.lightList);
 
                     if (hdCamera.frameSettings.IsEnabled(FrameSettingsField.RayTracing) && GetRayTracingClusterState())
@@ -980,9 +988,9 @@ namespace UnityEngine.Rendering.HighDefinition
             public Rect viewport;
         }
 
-        TextureHandle CreateOffscreenUIBuffer(RenderGraph renderGraph, MSAASamples msaaSamples)
+        TextureHandle CreateOffscreenUIBuffer(RenderGraph renderGraph, MSAASamples msaaSamples, Rect viewport)
         {
-            return renderGraph.CreateTexture(new TextureDesc(Vector2.one, false, true)
+            return renderGraph.CreateTexture(new TextureDesc((int)viewport.width, (int)viewport.height, false, true)
                 { colorFormat = GraphicsFormat.R8G8B8A8_SRGB, clearBuffer = false, msaaSamples = msaaSamples, name = "UI Buffer" });
         }
 
@@ -994,7 +1002,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 using (var builder = renderGraph.AddRenderPass<RenderOffscreenUIData>("UI Rendering", out var passData, ProfilingSampler.Get(HDProfileId.OffscreenUIRendering)))
                 {
                     // We cannot use rendererlist here because of the path tracing denoiser which will make it invalid due to multiple rendering per frame
-                    output = builder.UseColorBuffer(CreateOffscreenUIBuffer(renderGraph, hdCamera.msaaSamples), 0);
+                    output = builder.UseColorBuffer(CreateOffscreenUIBuffer(renderGraph, hdCamera.msaaSamples, hdCamera.finalViewport), 0);
 
                     passData.camera = hdCamera.camera;
                     passData.frameSettings = hdCamera.frameSettings;
@@ -1006,7 +1014,8 @@ namespace UnityEngine.Rendering.HighDefinition
                         context.cmd.ClearRenderTarget(false, true, Color.clear);
                         context.renderContext.ExecuteCommandBuffer(context.cmd);
                         context.cmd.Clear();
-                        context.renderContext.DrawUIOverlay(data.camera);
+                        if (data.camera.targetTexture == null)
+                            context.renderContext.DrawUIOverlay(data.camera);
                     });
                 }
             }
@@ -1631,7 +1640,7 @@ namespace UnityEngine.Rendering.HighDefinition
             ComposeLines(renderGraph, hdCamera, colorBuffer, prepassOutput.resolvedDepthBuffer, prepassOutput.motionVectorsBuffer, (int)LineRendering.CompositionMode.BeforeColorPyramid);
 
             // Render the transparent SSR lighting
-            var ssrLightingBuffer = RenderSSR(renderGraph, hdCamera, ref prepassOutput, in transparentPrepass, renderGraph.defaultResources.blackTextureXR, rayCountTexture, renderGraph.defaultResources.blackTextureXR, skyTexture, transparent: true);
+            var ssrLightingBuffer = RenderSSR(renderGraph, hdCamera, ref prepassOutput, renderGraph.defaultResources.blackTextureXR, rayCountTexture, renderGraph.defaultResources.blackTextureXR, skyTexture, transparent: true);
 
             colorBuffer = RaytracingRecursiveRender(renderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, transparentPrepass.flagMaskBuffer, rayCountTexture);
 
@@ -1652,8 +1661,8 @@ namespace UnityEngine.Rendering.HighDefinition
             // Render the deferred water lighting
             m_WaterSystem.RenderWaterLighting(renderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, prepassOutput.depthPyramidTexture, volumetricLighting, ssrLightingBuffer, transparentPrepass, lightLists, ref opticalFogTransmittance);
 
-            // If required, render the water mask debug views
-            m_WaterSystem.RenderWaterMask(renderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, transparentPrepass.waterGBuffer);
+            // If required, render the water debug view
+            m_WaterSystem.RenderWaterDebug(renderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, transparentPrepass.waterGBuffer);
 
             bool ssmsEnabled = Fog.IsMultipleScatteringEnabled(hdCamera, out float fogMultipleScatteringIntensity);
             if (hdCamera.frameSettings.IsEnabled(FrameSettingsField.Refraction) || hdCamera.IsSSREnabled() || hdCamera.IsSSREnabled(true) || hdCamera.IsSSGIEnabled() || ssmsEnabled)

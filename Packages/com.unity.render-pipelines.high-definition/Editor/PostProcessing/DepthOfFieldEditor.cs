@@ -83,6 +83,8 @@ namespace UnityEditor.Rendering.HighDefinition
 
         public override void OnInspectorGUI()
         {
+            HDEditorUtils.EnsureFrameSetting(FrameSettingsField.DepthOfField, "Depth Of Field");
+
             PropertyField(m_FocusMode, Styles.k_DepthOfFieldMode);
 
             int mode = m_FocusMode.value.intValue;
@@ -199,7 +201,7 @@ namespace UnityEditor.Rendering.HighDefinition
                     PropertyPBRDofResolution(m_Resolution);
                 else
                     PropertyField(m_Resolution);
-                
+
                 PropertyField(m_HighQualityFiltering);
                 if (m_PhysicallyBased.value.boolValue)
                 {

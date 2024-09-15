@@ -753,6 +753,10 @@ namespace UnityEngine.Rendering.Universal
 
                 SetupPerCameraShaderConstants(cmd);
 
+                ProbeVolumesOptions apvOptions = null;
+                if (camera.TryGetComponent<UniversalAdditionalCameraData>(out var additionalCameraData))
+                    apvOptions = additionalCameraData.volumeStack?.GetComponent<ProbeVolumesOptions>();
+
                 bool supportProbeVolume = asset != null && asset.lightProbeSystem == LightProbeSystem.ProbeVolumes;
                 ProbeReferenceVolume.instance.SetEnableStateFromSRP(supportProbeVolume);
                 ProbeReferenceVolume.instance.SetVertexSamplingEnabled(asset.shEvalMode  == ShEvalMode.PerVertex || asset.shEvalMode  == ShEvalMode.Mixed);
@@ -764,7 +768,7 @@ namespace UnityEngine.Rendering.Universal
                         camera.cameraType != CameraType.Preview)
                     {
                         // TODO: Move this to one call for all cameras
-                        ProbeReferenceVolume.instance.UpdateCellStreaming(cmd, camera);
+                        ProbeReferenceVolume.instance.UpdateCellStreaming(cmd, camera, apvOptions);
                     }
                 }
 
@@ -781,13 +785,13 @@ namespace UnityEngine.Rendering.Universal
                     ProbeReferenceVolume.instance.BindAPVRuntimeResources(cmd, true);
 
                 // Must be called before culling because it emits intermediate renderers via Graphics.DrawInstanced.
-                ProbeReferenceVolume.instance.RenderDebug(camera, Texture2D.whiteTexture);
+                ProbeReferenceVolume.instance.RenderDebug(camera, apvOptions, Texture2D.whiteTexture);
 
                 // Update camera motion tracking (prev matrices) from cameraData.
                 // Called and updated only once, as the same camera can be rendered multiple times.
                 // NOTE: Tracks only the current (this) camera, not shadow views or any other offscreen views.
                 // NOTE: Shared between both Execute and Render (RG) paths.
-                if (camera.TryGetComponent<UniversalAdditionalCameraData>(out var additionalCameraData))
+                if (additionalCameraData != null)
                     additionalCameraData.motionVectorsPersistentData.Update(cameraData);
 
                 // TODO: Move into the renderer. Problem: It modifies the AdditionalCameraData which is copied into RenderingData which causes value divergence for value types.
@@ -1223,8 +1227,7 @@ namespace UnityEngine.Rendering.Universal
             if (!cameraData.postProcessEnabled)
                 return false;
 
-            if ((cameraData.antialiasing == AntialiasingMode.SubpixelMorphologicalAntiAliasing || cameraData.IsTemporalAAEnabled())
-                && cameraData.renderType == CameraRenderType.Base)
+            if (cameraData.IsTemporalAAEnabled() && (cameraData.renderType == CameraRenderType.Base))
                 return true;
 
             return CheckPostProcessForDepth();
@@ -1568,7 +1571,7 @@ namespace UnityEngine.Rendering.Universal
 
             UniversalRenderingData data = frameData.Get<UniversalRenderingData>();
             data.supportsDynamicBatching = settings.supportsDynamicBatching;
-            data.perObjectData = GetPerObjectLightFlags(universalLightData.additionalLightsCount, isForwardPlus);
+            data.perObjectData = GetPerObjectLightFlags(universalLightData.additionalLightsCount, isForwardPlus, settings.reflectionProbeBlending);
 
             // Render graph does not support RenderingData.commandBuffer as its execution timeline might break.
             // RenderingData.commandBuffer is available only for the old non-RG execute code path.
@@ -1903,7 +1906,7 @@ namespace UnityEngine.Rendering.Universal
 #endif
         }
 
-        static PerObjectData GetPerObjectLightFlags(int additionalLightsCount, bool isForwardPlus)
+        static PerObjectData GetPerObjectLightFlags(int additionalLightsCount, bool isForwardPlus, bool reflectionProbeBlending)
         {
             using var profScope = new ProfilingScope(Profiling.Pipeline.getPerObjectLightFlags);
 
@@ -1912,6 +1915,10 @@ namespace UnityEngine.Rendering.Universal
             if (!isForwardPlus)
             {
                 configuration |= PerObjectData.ReflectionProbes | PerObjectData.LightData;
+            }
+            else if (!reflectionProbeBlending)
+            {
+                configuration |= PerObjectData.ReflectionProbes;
             }
 
             if (additionalLightsCount > 0 && !isForwardPlus)

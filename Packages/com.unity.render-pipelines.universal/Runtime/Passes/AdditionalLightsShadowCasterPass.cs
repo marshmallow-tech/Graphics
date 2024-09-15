@@ -68,7 +68,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         /// <seealso cref="RenderPassEvent"/>
         public AdditionalLightsShadowCasterPass(RenderPassEvent evt)
         {
-            base.profilingSampler = new ProfilingSampler(nameof(AdditionalLightsShadowCasterPass));
+            base.profilingSampler = new ProfilingSampler("Draw Additional Lights Shadowmap");
             renderPassEvent = evt;
 
             m_PassData = new PassData();
@@ -617,8 +617,17 @@ namespace UnityEngine.Rendering.Universal.Internal
         [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsolete, false)]
         public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
         {
+             
             if (m_CreateEmptyShadowmap && !m_EmptyShadowmapNeedsClear)
+            {
+                // UUM-63146 - glClientWaitSync: Expected application to have kicked everything until job: 96089 (possibly by calling glFlush)" are thrown in the Android Player on some devices with PowerVR Rogue GE8320
+                // Resetting of target would clean up the color attachment buffers and depth attachment buffers, which inturn is preventing the leak in the said platform. This is likely a symptomatic fix, but is solving the problem for now.
+
+                if (Application.platform == RuntimePlatform.Android && PlatformAutoDetect.isRunningOnPowerVRGPU)
+                    ResetTarget();
+
                 return;
+            }
 
             // Disable obsolete warning for internal usage
             #pragma warning disable CS0618
@@ -895,7 +904,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             UniversalLightData lightData = frameData.Get<UniversalLightData>();
             UniversalShadowData shadowData = frameData.Get<UniversalShadowData>();
 
-            using (var builder = graph.AddRasterRenderPass<PassData>("Additional Lights Shadowmap", out var passData, base.profilingSampler))
+            using (var builder = graph.AddRasterRenderPass<PassData>(passName, out var passData, profilingSampler))
             {
                 InitPassData(ref passData, cameraData, lightData, shadowData);
                 InitRendererLists(ref renderingData.cullResults, ref passData, default(ScriptableRenderContext), graph, true);

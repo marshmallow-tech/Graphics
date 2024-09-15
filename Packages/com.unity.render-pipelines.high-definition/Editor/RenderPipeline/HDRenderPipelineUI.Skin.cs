@@ -121,8 +121,8 @@ namespace UnityEditor.Rendering.HighDefinition
             public static readonly GUIContent supportWaterContent = EditorGUIUtility.TrTextContent("Enable", "When enabled, HDRP allocates memory for the water surfaces simulation and rendering. This allows you to use water surfaces in your Unity Project.");
             public static readonly GUIContent waterSimulationResolutionContent = EditorGUIUtility.TrTextContent("Simulation Resolution", "Specifies the resolution of the water simulation. A higher resolution increases the visual quality, but increases the cost.");
             public static readonly GUIContent supportWaterDeformationContent = EditorGUIUtility.TrTextContent("Deformation", "When enabled, HDRP allocates additional memory to support water deformation.");
-            public static readonly GUIContent deformationAtlasSizeContent = EditorGUIUtility.TrTextContent("Deformation Atlas Size", "Specifies the size of the atlas used to store texture water deformers.");
-            public static readonly GUIContent maximumDeformerCountContent = EditorGUIUtility.TrTextContent("Maximum Deformer Count", "Sets the maximum amount of water deformers HDRP can support.");
+            public static readonly GUIContent waterDecalAtlasSizeContent = EditorGUIUtility.TrTextContent("Decal Atlas Size", "Specifies the size of the atlas used to store texture water decals.");
+            public static readonly GUIContent maximumWaterDecalCountContent = EditorGUIUtility.TrTextContent("Maximum Decal Count", "Sets the maximum amount of water decals HDRP can support.");
             public static readonly GUIContent supportWaterFoamContent = EditorGUIUtility.TrTextContent("Foam", "When enabled, HDRP allocates additional memory to support water foam.");
             public static readonly GUIContent foamAtlasSizeContent = EditorGUIUtility.TrTextContent("Foam Atlas Size", "Specifies the size of the atlas used to store texture water foam.");
             public static readonly GUIContent supportWaterExclusionContent = EditorGUIUtility.TrTextContent("Exclusion", "When enabled, HDRP allocates a stencil bit to support water excluders.");
@@ -269,6 +269,9 @@ namespace UnityEditor.Rendering.HighDefinition
             public static readonly GUIContent enableDLSS = EditorGUIUtility.TrTextContent("Enable DLSS", "Enables NVIDIA Deep Learning Super Sampling (DLSS).");
             public static readonly GUIContent DLSSQualitySettingContent = EditorGUIUtility.TrTextContent("DLSS Mode", "Selects a performance quality setting for NVIDIA Deep Learning Super Sampling (DLSS).");
             public static readonly GUIContent DLSSInjectionPoint = EditorGUIUtility.TrTextContent("DLSS Injection Point", "The injection point at which to apply DLSS upscaling.");
+            public static readonly GUIContent defaultInjectionPoint = EditorGUIUtility.TrTextContent("Injection Point", "The injection point at which to apply the upscaling.");
+            public static readonly GUIContent TAAUInjectionPoint = EditorGUIUtility.TrTextContent("TAA Upscale Injection Point", "The injection point at which to apply the upscaling.");
+            public static readonly GUIContent STPInjectionPoint = EditorGUIUtility.TrTextContent("STP Injection Point", "The injection point at which to apply the upscaling.");
             public static readonly GUIContent DLSSUseOptimalSettingsContent = EditorGUIUtility.TrTextContent("DLSS Use Optimal Settings", "Sets the sharpness and scale automatically for NVIDIA Deep Learning Super Sampling, depending on the values of quality settings. When DLSS Optimal Settings is on, the percentage settings for Dynamic Resolution Scaling are ignored.");
             public static readonly GUIContent DLSSSharpnessContent = EditorGUIUtility.TrTextContent("DLSS Sharpness", "NVIDIA Deep Learning Super Sampling pixel sharpness of upsampler. Controls how the DLSS upsampler will render edges on the image. More sharpness usually means more contrast and clearer image but can increase flickering and fireflies. This setting is ignored if optimal settings are used.");
 

@@ -64,7 +64,7 @@ namespace UnityEngine.Rendering.Universal
 
         #region Pass Data
 
-        private static readonly ProfilingSampler s_DebugSetupSampler = new ProfilingSampler(nameof(Setup));
+        private static readonly ProfilingSampler s_DebugSetupSampler = new ProfilingSampler("Setup Debug Properties");
         private static readonly ProfilingSampler s_DebugFinalValidationSampler = new ProfilingSampler(nameof(UpdateShaderGlobalPropertiesForFinalValidationPass));
 
         DebugSetupPassData s_DebugSetupPassData = new DebugSetupPassData();
@@ -416,15 +416,28 @@ namespace UnityEngine.Rendering.Universal
             using (var builder = renderGraph.AddRasterRenderPass<DebugFinalValidationPassData>(nameof(UpdateShaderGlobalPropertiesForFinalValidationPass), out var passData, s_DebugFinalValidationSampler))
             {
                 InitDebugFinalValidationPassData(passData, cameraData, isFinalPass);
-                passData.debugRenderTargetHandle = renderGraph.ImportTexture(m_DebugRenderTarget);
-                passData.debugFontTextureHandle = renderGraph.ImportTexture(m_DebugFontTexture);
+
+                if (m_DebugRenderTarget != null)
+                    passData.debugRenderTargetHandle = renderGraph.ImportTexture(m_DebugRenderTarget);
+
+                if (m_DebugFontTexture != null)
+                    passData.debugFontTextureHandle = renderGraph.ImportTexture(m_DebugFontTexture);
 
                 builder.AllowPassCulling(false);
                 builder.AllowGlobalStateModification(true);
-                builder.SetGlobalTextureAfterPass(passData.debugRenderTargetHandle, passData.debugTexturePropertyId);
-                builder.SetGlobalTextureAfterPass(passData.debugFontTextureHandle, k_DebugFontId);
-                builder.UseTexture(passData.debugRenderTargetHandle);
-                builder.UseTexture(passData.debugFontTextureHandle);
+
+                if (passData.debugRenderTargetHandle.IsValid())
+                {
+                    builder.UseTexture(passData.debugRenderTargetHandle);
+                    builder.SetGlobalTextureAfterPass(passData.debugRenderTargetHandle, passData.debugTexturePropertyId);
+                }
+
+                if (passData.debugFontTextureHandle.IsValid())
+                {
+                    builder.UseTexture(passData.debugFontTextureHandle);
+                    builder.SetGlobalTextureAfterPass(passData.debugFontTextureHandle, k_DebugFontId);
+                }
+
                 builder.SetRenderFunc(static (DebugFinalValidationPassData data, RasterGraphContext context) =>
                 {
                     UpdateShaderGlobalPropertiesForFinalValidationPass(context.cmd, data);
@@ -507,7 +520,7 @@ namespace UnityEngine.Rendering.Universal
         [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
         internal void Setup(RenderGraph renderGraph, bool isPreviewCamera)
         {
-            using (var builder = renderGraph.AddRasterRenderPass<DebugSetupPassData>(nameof(Setup), out var passData, s_DebugSetupSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<DebugSetupPassData>(s_DebugSetupSampler.name, out var passData, s_DebugSetupSampler))
             {
                 InitDebugSetupPassData(passData, isPreviewCamera);
                 builder.AllowPassCulling(false);
